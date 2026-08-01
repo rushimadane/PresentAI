@@ -75,7 +75,22 @@ export const buildImageUrl = (prompt: string, style: ImageStyle = "illustration"
     [...fullPrompt].reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) | 0, 7)
   );
   const encoded = encodeURIComponent(fullPrompt);
-  return `https://image.pollinations.ai/prompt/${encoded}?width=1280&height=720&nologo=true&seed=${seed}`;
+  // width/height: smaller = faster generation (still sharp on a slide).
+  // model=flux: highest-quality model, best prompt adherence (more relevant).
+  return `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=576&nologo=true&model=flux&seed=${seed}`;
+};
+
+// Warm the image cache by requesting every slide's image in the background, so
+// that by the time the user flips to a slide, Pollinations has already generated
+// (and cached) it. Safe to call after generation or when a deck is opened.
+export const preloadSlideImages = (slides: SlideContent[]): void => {
+  if (typeof window === "undefined") return;
+  slides.forEach((slide) => {
+    if (slide.imageUrl) {
+      const img = new Image();
+      img.src = slide.imageUrl;
+    }
+  });
 };
 
 const imageLineRegex = /^\s*image\s*[:\-]\s*(.+)$/i;
@@ -274,7 +289,13 @@ export const generatePresentation = async (request: PresentationRequest): Promis
     if (request.withImages) {
       const style = request.imageStyle ?? "illustration";
       slides.forEach((slide) => {
-        const prompt = slide.imagePrompt?.trim() || `${request.title}: ${slide.title}`;
+        // Prefer Gemini's tailored image line; otherwise build a specific prompt
+        // from the deck topic + slide title + first content line for relevance.
+        const firstLine = (slide.content || "").split("\n")[0]?.trim();
+        const fallback = [request.title, slide.title, firstLine]
+          .filter(Boolean)
+          .join(", ");
+        const prompt = slide.imagePrompt?.trim() || fallback || slide.title;
         slide.imagePrompt = prompt;
         slide.imageStyle = style;
         slide.imageUrl = buildImageUrl(prompt, style);
@@ -285,6 +306,9 @@ export const generatePresentation = async (request: PresentationRequest): Promis
 
     // Cache the result so an identical request is instant next time.
     writeCache(cacheKey, { title: resolvedTitle, slides, cachedAt: Date.now() });
+
+    // Warm the image cache so navigation between slides is instant.
+    if (request.withImages) preloadSlideImages(slides);
 
     return {
       id: uuidv4(),

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight, Download, Edit, Plus, Image, ImageOff, Save, Presentation as PresentationIcon, RefreshCw } from 'lucide-react';
-import { Presentation, SlideContent, buildImageUrl, ImageStyle, IMAGE_STYLE_LABELS } from '@/services/presentationService';
+import { Presentation, SlideContent, buildImageUrl, ImageStyle, IMAGE_STYLE_LABELS, preloadSlideImages } from '@/services/presentationService';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -19,18 +19,34 @@ interface PresentationViewProps {
   onSave?: (presentation: Presentation) => void;
 }
 
-// Slide image with a skeleton placeholder while loading and a fallback on error.
+// Slide image with a skeleton placeholder, automatic retries (Pollinations
+// occasionally returns transient 5xx on first request), and a fallback on error.
+const MAX_RETRIES = 2;
+
 const SlideImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => {
   const [loaded, setLoaded] = useState(false);
-  const [errored, setErrored] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const [failed, setFailed] = useState(false);
 
-  // Reset state whenever the image source changes (e.g. after regeneration).
+  // Reset when the source changes (e.g. after regeneration).
   useEffect(() => {
     setLoaded(false);
-    setErrored(false);
+    setAttempt(0);
+    setFailed(false);
   }, [src]);
 
-  if (errored) {
+  // Add a cache-buster on retries so the browser actually re-requests.
+  const effectiveSrc = attempt === 0 ? src : `${src}${src.includes('?') ? '&' : '?'}retry=${attempt}`;
+
+  const handleError = () => {
+    if (attempt < MAX_RETRIES) {
+      setTimeout(() => setAttempt((a) => a + 1), 800 * (attempt + 1));
+    } else {
+      setFailed(true);
+    }
+  };
+
+  if (failed) {
     return (
       <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-gray-400 text-xs">
         <ImageOff className="h-6 w-6" />
@@ -43,12 +59,12 @@ const SlideImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => {
     <>
       {!loaded && <Skeleton className="absolute inset-0 h-full w-full rounded-none" />}
       <img
-        src={src}
+        key={effectiveSrc}
+        src={effectiveSrc}
         alt={alt}
-        loading="lazy"
         className={`w-full h-full object-cover transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
         onLoad={() => setLoaded(true)}
-        onError={() => setErrored(true)}
+        onError={handleError}
       />
     </>
   );
@@ -81,6 +97,8 @@ const PresentationView: React.FC<PresentationViewProps> = ({
       slides: presentation.slides || []
     });
     setCurrentSlideIndex(0);
+    // Warm every slide's image so flipping between slides is instant.
+    preloadSlideImages(presentation.slides || []);
   }, [presentation, title]);
 
   const currentSlide = processedPresentation.slides[currentSlideIndex];
