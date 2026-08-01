@@ -44,8 +44,12 @@ export interface Presentation {
 }
 
 
+// In production the backend is a same-origin Vercel function, so use a relative
+// path (""). In dev, talk to the local Express server on :5000. An explicit
+// VITE_API_BASE_URL always wins.
 const API_BASE_URL =
-  (import.meta.env?.VITE_API_BASE_URL as string | undefined) || "http://localhost:5000";
+  (import.meta.env.VITE_API_BASE_URL as string | undefined) ??
+  (import.meta.env.DEV ? "http://localhost:5000" : "");
 
 interface GenerateResponse {
   result: string;
