@@ -81,6 +81,30 @@ async function handleGenerate(req, res) {
   }
 }
 
+// Pexels stock-photo proxy (keeps the API key server-side). Mirrors api/image.js.
+async function handleImage(req, res) {
+  const query = (req.query.query || '').toString().trim();
+  const page = Math.max(1, parseInt((req.query.page || '1').toString(), 10) || 1);
+  const key = process.env.PEXELS_API_KEY;
+
+  if (!key || !query) return res.json({ url: null });
+
+  try {
+    const url = `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=1&page=${page}&orientation=landscape`;
+    const r = await fetch(url, { headers: { Authorization: key } });
+    if (!r.ok) return res.json({ url: null });
+    const data = await r.json();
+    const photo = data.photos && data.photos[0];
+    const src = photo && photo.src ? (photo.src.landscape || photo.src.large || photo.src.original) : null;
+    res.json({ url: src || null, credit: photo ? photo.photographer : null });
+  } catch (err) {
+    console.error('Pexels error:', err && (err.message || err));
+    res.json({ url: null });
+  }
+}
+
+app.get('/api/image', handleImage);
+
 // Health check route
 app.get('/', (req, res) => {
   res.send(`Smart Presenter Hub backend is running (model: ${MODEL_NAME}).`);

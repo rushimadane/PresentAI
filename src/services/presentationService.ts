@@ -81,8 +81,7 @@ export const buildImageUrl = (prompt: string, style: ImageStyle = "illustration"
 };
 
 // Warm the image cache by requesting every slide's image in the background, so
-// that by the time the user flips to a slide, Pollinations has already generated
-// (and cached) it. Safe to call after generation or when a deck is opened.
+// that by the time the user flips to a slide, the image is already loaded.
 export const preloadSlideImages = (slides: SlideContent[]): void => {
   if (typeof window === "undefined") return;
   slides.forEach((slide) => {
@@ -91,6 +90,44 @@ export const preloadSlideImages = (slides: SlideContent[]): void => {
       img.src = slide.imageUrl;
     }
   });
+};
+
+// Turn a descriptive image prompt into a short keyword query that stock-photo
+// search engines handle well (drop leading article, style tail, extra words).
+const toSearchQuery = (prompt: string): string =>
+  prompt
+    .split(",")[0]
+    .replace(/^(a|an|the)\s+/i, "")
+    .split(/\s+/)
+    .slice(0, 6)
+    .join(" ")
+    .trim();
+
+// Resolve a slide image URL. For the "photo" style, use real Pexels stock
+// photos (fast, always relevant); for creative styles, use AI generation.
+// `variant` returns a different photo/image (used by "regenerate").
+export const resolveImageUrl = async (
+  prompt: string,
+  style: ImageStyle = "illustration",
+  variant = 0
+): Promise<string> => {
+  if (style === "photo") {
+    try {
+      const page = (Math.abs(variant) % 10) + 1;
+      const res = await fetch(
+        `${API_BASE_URL}/api/image?query=${encodeURIComponent(toSearchQuery(prompt))}&page=${page}`
+      );
+      if (res.ok) {
+        const data = (await res.json()) as { url?: string | null };
+        if (data.url) return data.url;
+      }
+    } catch {
+      // fall through to AI generation
+    }
+  }
+  // Non-photo styles, or Pexels unavailable → AI generation.
+  const base = buildImageUrl(prompt, style);
+  return variant ? `${base}&v=${variant}` : base;
 };
 
 const imageLineRegex = /^\s*image\s*[:\-]\s*(.+)$/i;
@@ -285,21 +322,23 @@ export const generatePresentation = async (request: PresentationRequest): Promis
       throw new Error("The AI returned no usable slides. Try adding more detail to your topic.");
     }
 
-    // Attach a generated image to each slide when images were requested.
+    // Attach an image to each slide when images were requested.
     if (request.withImages) {
-      const style = request.imageStyle ?? "illustration";
-      slides.forEach((slide) => {
-        // Prefer Gemini's tailored image line; otherwise build a specific prompt
-        // from the deck topic + slide title + first content line for relevance.
-        const firstLine = (slide.content || "").split("\n")[0]?.trim();
-        const fallback = [request.title, slide.title, firstLine]
-          .filter(Boolean)
-          .join(", ");
-        const prompt = slide.imagePrompt?.trim() || fallback || slide.title;
-        slide.imagePrompt = prompt;
-        slide.imageStyle = style;
-        slide.imageUrl = buildImageUrl(prompt, style);
-      });
+      const style = request.imageStyle ?? "photo";
+      await Promise.all(
+        slides.map(async (slide) => {
+          // Prefer Gemini's tailored image line; otherwise build a specific prompt
+          // from the deck topic + slide title + first content line for relevance.
+          const firstLine = (slide.content || "").split("\n")[0]?.trim();
+          const fallback = [request.title, slide.title, firstLine]
+            .filter(Boolean)
+            .join(", ");
+          const prompt = slide.imagePrompt?.trim() || fallback || slide.title;
+          slide.imagePrompt = prompt;
+          slide.imageStyle = style;
+          slide.imageUrl = await resolveImageUrl(prompt, style);
+        })
+      );
     }
 
     const resolvedTitle = data.title || request.title;

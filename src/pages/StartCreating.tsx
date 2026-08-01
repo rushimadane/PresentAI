@@ -35,7 +35,7 @@ const StartCreating = () => {
   const [slideBySlide, setSlideBySlide] = useState<boolean>(false);
   const [contentType, setContentType] = useState<string>('topic');
   const [withImages, setWithImages] = useState<boolean>(true);
-  const [imageStyle, setImageStyle] = useState<ImageStyle>('illustration');
+  const [imageStyle, setImageStyle] = useState<ImageStyle>('photo');
   const [agreeToTerms, setAgreeToTerms] = useState<boolean>(false);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [apiKey, setApiKey] = useState<string>('');
@@ -330,7 +330,7 @@ Slide 2: Main Topic
                         </SelectContent>
                       </Select>
                       <p className="text-xs text-gray-500">
-                        Images are generated free via Pollinations.ai — no extra API key needed.
+                        "Photo" uses real stock photos (fast &amp; relevant). Other styles are AI-generated.
                       </p>
                     </div>
                   )}

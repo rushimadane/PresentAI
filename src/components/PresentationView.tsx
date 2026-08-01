@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight, Download, Edit, Plus, Image, ImageOff, Save, Presentation as PresentationIcon, RefreshCw } from 'lucide-react';
-import { Presentation, SlideContent, buildImageUrl, ImageStyle, IMAGE_STYLE_LABELS, preloadSlideImages } from '@/services/presentationService';
+import { Presentation, SlideContent, resolveImageUrl, ImageStyle, IMAGE_STYLE_LABELS, preloadSlideImages } from '@/services/presentationService';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -151,44 +151,47 @@ const PresentationView: React.FC<PresentationViewProps> = ({
     });
   };
 
-  // Build a fresh image for a single slide. `fresh` adds a cache-buster so the
-  // generator returns a new variant even for the same prompt+style.
-  const imageForSlide = (slide: SlideContent, style: ImageStyle, fresh = false): SlideContent => {
+  // Resolve a fresh image for one slide. `variant` returns a different
+  // photo/image so "regenerate" actually changes the picture.
+  const imageForSlide = async (slide: SlideContent, style: ImageStyle, variant = 0): Promise<SlideContent> => {
     const prompt = (slide.imagePrompt || slide.title || processedPresentation.title || 'presentation slide').trim();
-    const base = buildImageUrl(prompt, style);
-    return {
-      ...slide,
-      imagePrompt: prompt,
-      imageStyle: style,
-      imageUrl: fresh ? `${base}&t=${Date.now()}` : base,
-    };
+    const imageUrl = await resolveImageUrl(prompt, style, variant);
+    return { ...slide, imagePrompt: prompt, imageStyle: style, imageUrl };
   };
 
   // Regenerate the current slide's image (keeps its own style).
-  const regenerateImage = () => {
+  const regenerateImage = async () => {
     const slide = processedPresentation.slides[currentSlideIndex];
-    const style = slide.imageStyle || 'illustration';
-    const updatedSlides = [...processedPresentation.slides];
-    updatedSlides[currentSlideIndex] = imageForSlide(slide, style, true);
-    setProcessedPresentation({ ...processedPresentation, slides: updatedSlides });
-    toast({ title: 'Regenerating image', description: 'A new image is being generated for this slide.' });
+    const style = slide.imageStyle || 'photo';
+    toast({ title: 'Regenerating image', description: 'Fetching a new image for this slide.' });
+    const updated = await imageForSlide(slide, style, Date.now());
+    setProcessedPresentation((prev) => {
+      const slides = [...prev.slides];
+      slides[currentSlideIndex] = updated;
+      return { ...prev, slides };
+    });
   };
 
   // Change the current slide's image style and regenerate it.
-  const changeSlideStyle = (style: ImageStyle) => {
+  const changeSlideStyle = async (style: ImageStyle) => {
     const slide = processedPresentation.slides[currentSlideIndex];
-    const updatedSlides = [...processedPresentation.slides];
-    updatedSlides[currentSlideIndex] = imageForSlide(slide, style, true);
-    setProcessedPresentation({ ...processedPresentation, slides: updatedSlides });
+    const updated = await imageForSlide(slide, style, Date.now());
+    setProcessedPresentation((prev) => {
+      const slides = [...prev.slides];
+      slides[currentSlideIndex] = updated;
+      return { ...prev, slides };
+    });
   };
 
   // Regenerate images for every slide at once (each keeps its own style).
-  const regenerateAllImages = () => {
-    const updatedSlides = processedPresentation.slides.map((slide) =>
-      imageForSlide(slide, slide.imageStyle || 'illustration', true)
+  const regenerateAllImages = async () => {
+    toast({ title: 'Regenerating all images', description: 'Fetching fresh images for every slide.' });
+    const updatedSlides = await Promise.all(
+      processedPresentation.slides.map((slide) =>
+        imageForSlide(slide, slide.imageStyle || 'photo', Date.now())
+      )
     );
-    setProcessedPresentation({ ...processedPresentation, slides: updatedSlides });
-    toast({ title: 'Regenerating all images', description: 'Fresh images are being generated for every slide.' });
+    setProcessedPresentation((prev) => ({ ...prev, slides: updatedSlides }));
   };
 
   const hasImages = processedPresentation.slides.some((s) => s.imageUrl);
