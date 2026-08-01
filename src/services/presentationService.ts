@@ -5,11 +5,11 @@ import { v4 as uuidv4 } from "uuid";
 export type ImageStyle = "photo" | "illustration" | "3d" | "sticker" | "minimal";
 
 export const IMAGE_STYLE_LABELS: Record<ImageStyle, string> = {
-  photo: "Photorealistic",
-  illustration: "Illustration",
-  "3d": "3D render",
-  sticker: "Sticker",
-  minimal: "Minimal / flat",
+  photo: "Real photo (recommended)",
+  illustration: "Illustration (AI)",
+  "3d": "3D render (AI)",
+  sticker: "Sticker (AI)",
+  minimal: "Minimal / flat (AI)",
 };
 
 export interface PresentationRequest {
@@ -207,7 +207,9 @@ export const parseSlides = (rawText: string): SlideContent[] => {
 // re-hitting Gemini. Keyed by the request signature (the API key is excluded).
 // Cached in-memory for the session and in localStorage across reloads.
 // ---------------------------------------------------------------------------
-const CACHE_PREFIX = "pres_cache_";
+// Bump the version suffix whenever the image pipeline changes, to invalidate
+// cached decks that stored old image URLs (e.g. the switch to Pexels photos).
+const CACHE_PREFIX = "pres_cache_v2_";
 const CACHE_TTL_MS = 1000 * 60 * 60 * 24; // 24 hours
 
 interface CachedGeneration {

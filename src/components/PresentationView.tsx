@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, ChevronRight, Download, Edit, Plus, Image, ImageOff, Save, Presentation as PresentationIcon, RefreshCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Edit, Plus, Image, ImageOff, Save, Presentation as PresentationIcon, RefreshCw, FileText, FileDown } from 'lucide-react';
 import { Presentation, SlideContent, resolveImageUrl, ImageStyle, IMAGE_STYLE_LABELS, preloadSlideImages } from '@/services/presentationService';
+import { exportToPptx, exportToPdf } from '@/utils/exportPresentation';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { toast } from '@/components/ui/use-toast';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -113,16 +115,31 @@ const PresentationView: React.FC<PresentationViewProps> = ({
     ));
   };
 
-  const handleDownload = () => {
-    const dataStr = "data:text/json;charset=utf-8," +
-      encodeURIComponent(JSON.stringify(processedPresentation));
-    const downloadAnchorNode = document.createElement('a');
-    downloadAnchorNode.setAttribute("href", dataStr);
-    downloadAnchorNode.setAttribute("download",
-      `${processedPresentation.title.replace(/\s+/g, '_')}.json`);
-    document.body.appendChild(downloadAnchorNode);
-    downloadAnchorNode.click();
-    downloadAnchorNode.remove();
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExport = async (format: 'pptx' | 'pdf') => {
+    setIsExporting(true);
+    toast({
+      title: `Preparing ${format.toUpperCase()}`,
+      description: 'Embedding images and building your file…',
+    });
+    try {
+      if (format === 'pptx') {
+        await exportToPptx(processedPresentation);
+      } else {
+        await exportToPdf(processedPresentation);
+      }
+      toast({ title: 'Download ready', description: `Your ${format.toUpperCase()} has been downloaded.` });
+    } catch (err) {
+      console.error('Export failed:', err);
+      toast({
+        title: 'Export failed',
+        description: 'Something went wrong while creating the file. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handleEditToggle = () => {
@@ -271,7 +288,7 @@ const PresentationView: React.FC<PresentationViewProps> = ({
               />
               <div className="absolute top-2 left-2 flex items-center gap-1 rounded bg-black/50 px-2 py-1 text-[10px] text-white">
                 <Image className="h-3 w-3" />
-                AI image
+                {currentSlide.imageUrl?.includes('pexels.com') ? 'Photo' : 'AI image'}
               </div>
               {isEditing && (
                 <button
@@ -409,13 +426,24 @@ const PresentationView: React.FC<PresentationViewProps> = ({
           )}
         </Button>
 
-        <Button
-          className="flex-1"
-          onClick={handleDownload}
-        >
-          <Download className="h-4 w-4 mr-2" />
-          Download
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button className="flex-1" disabled={isExporting}>
+              <Download className="h-4 w-4 mr-2" />
+              {isExporting ? 'Preparing…' : 'Download'}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="center">
+            <DropdownMenuItem onClick={() => handleExport('pptx')}>
+              <FileText className="h-4 w-4 mr-2" />
+              PowerPoint (.pptx)
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => handleExport('pdf')}>
+              <FileDown className="h-4 w-4 mr-2" />
+              PDF (.pdf)
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         {onCreateNew && (
           <Button

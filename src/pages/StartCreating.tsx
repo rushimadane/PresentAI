@@ -330,7 +330,7 @@ Slide 2: Main Topic
                         </SelectContent>
                       </Select>
                       <p className="text-xs text-gray-500">
-                        "Photo" uses real stock photos (fast &amp; relevant). Other styles are AI-generated.
+                        "Real photo" uses actual stock photography (fast &amp; relevant). The other styles are AI-generated.
                       </p>
                     </div>
                   )}
