@@ -1,11 +1,12 @@
 import { toast } from "@/components/ui/use-toast";
 import { v4 as uuidv4 } from "uuid";
 
-// Visual styles for the per-slide generated images.
-export type ImageStyle = "photo" | "illustration" | "3d" | "sticker" | "minimal";
+// Visual styles / sources for the per-slide images.
+export type ImageStyle = "photo" | "web" | "illustration" | "3d" | "sticker" | "minimal";
 
 export const IMAGE_STYLE_LABELS: Record<ImageStyle, string> = {
-  photo: "Real photo (recommended)",
+  web: "Web images — best match (uses search quota)",
+  photo: "Real photo (stock)",
   illustration: "Illustration (AI)",
   "3d": "3D render (AI)",
   sticker: "Sticker (AI)",
@@ -64,6 +65,7 @@ interface GenerateResponse {
 
 // Extra prompt wording appended per style to steer the image generator.
 const STYLE_MODIFIERS: Record<ImageStyle, string> = {
+  web: "", // web uses image search, not AI generation
   photo: "professional photography, high detail, natural lighting",
   illustration: "flat vector illustration, clean, modern, vibrant colors",
   "3d": "3d render, soft studio lighting, glossy, colorful",
@@ -97,16 +99,26 @@ export const preloadSlideImages = (slides: SlideContent[]): void => {
   });
 };
 
-// Turn a descriptive image prompt into a short keyword query that stock-photo
-// search engines handle well (drop leading article, style tail, extra words).
-const toSearchQuery = (prompt: string): string =>
-  prompt
-    .split(",")[0]
-    .replace(/^(a|an|the)\s+/i, "")
+// Grammatical + presentation-filler words that hurt image search relevance.
+const QUERY_STOPWORDS = new Set([
+  "a", "an", "the", "of", "for", "and", "or", "to", "in", "on", "with", "via", "by", "at", "as",
+  "is", "are", "be", "your", "you", "our", "how", "what", "why", "this", "that", "these", "those",
+  "guide", "beginner", "beginners", "introduction", "intro", "overview", "basics", "basic",
+  "understanding", "use", "uses", "using", "future", "role", "impact", "key", "points", "slide",
+]);
+
+// Turn a title/description into a short, clean keyword query that image search
+// engines handle well: strip punctuation and filler, keep the meaningful terms.
+const toSearchQuery = (prompt: string): string => {
+  const words = (prompt || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
-    .slice(0, 6)
-    .join(" ")
-    .trim();
+    .filter((w) => w.length > 2 && !QUERY_STOPWORDS.has(w));
+  const cleaned = words.slice(0, 5).join(" ").trim();
+  // Fall back to the raw text if filtering removed everything.
+  return cleaned || (prompt || "").trim();
+};
 
 // Resolve a slide image URL. For the "photo" style, use real Pexels stock
 // photos (fast, always relevant); for creative styles, use AI generation.
@@ -116,6 +128,25 @@ export const resolveImageUrl = async (
   style: ImageStyle = "illustration",
   variant = 0
 ): Promise<string> => {
+  // Web: real Google Images (best for specific people/things, e.g. "Heisenberg").
+  if (style === "web") {
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/images?query=${encodeURIComponent(toSearchQuery(prompt))}&source=web`
+      );
+      if (res.ok) {
+        const data = (await res.json()) as { images?: { url: string }[] };
+        const list = data.images || [];
+        const pick = list[Math.abs(variant) % Math.max(1, list.length)];
+        if (pick?.url) return pick.url;
+      }
+    } catch {
+      // fall through to stock, then AI
+    }
+    // Web unavailable (no key / quota) → fall back to stock.
+    return resolveImageUrl(prompt, "photo", variant);
+  }
+
   if (style === "photo") {
     try {
       const page = (Math.abs(variant) % 10) + 1;
@@ -178,16 +209,20 @@ const writeCandidates = (key: string, images: ImageCandidate[]): void => {
 // (real Google Images via SerpAPI). Results are cached per query+source so the
 // same slide's Web tab doesn't burn another SerpAPI search. Always appends a
 // couple of AI-generated options so the picker is never empty.
+// A couple of AI-generated options — always available, no network/quota.
+export const aiImageOptions = (query: string, count = 4): ImageCandidate[] =>
+  Array.from({ length: count }).map((_, v) => ({
+    url: `${buildImageUrl(query, "illustration")}${v ? `&v=${v}` : ""}`,
+    source: "ai",
+    credit: "AI generated",
+  }));
+
 export const fetchImageCandidates = async (
   query: string,
   source: "all" | "stock" | "web" = "all"
 ): Promise<ImageCandidate[]> => {
   const q = toSearchQuery(query || "");
-  const aiOptions: ImageCandidate[] = [0, 1].map((v) => ({
-    url: `${buildImageUrl(query, "illustration")}${v ? `&v=${v}` : ""}`,
-    source: "ai",
-    credit: "AI generated",
-  }));
+  const aiOptions = aiImageOptions(query, 2);
 
   const cacheKey = `${CAND_PREFIX}${source}_${hashKey(q)}`;
   const cached = readCandidates(cacheKey);
@@ -291,7 +326,7 @@ export const parseSlides = (rawText: string): SlideContent[] => {
 // ---------------------------------------------------------------------------
 // Bump the version suffix whenever the image pipeline changes, to invalidate
 // cached decks that stored old image URLs (e.g. the switch to Pexels photos).
-const CACHE_PREFIX = "pres_cache_v2_";
+const CACHE_PREFIX = "pres_cache_v3_";
 const CACHE_TTL_MS = 1000 * 60 * 60 * 24; // 24 hours
 
 interface CachedGeneration {
@@ -413,12 +448,11 @@ export const generatePresentation = async (request: PresentationRequest): Promis
       const style = request.imageStyle ?? "photo";
       await Promise.all(
         slides.map(async (slide) => {
-          // Prefer Gemini's tailored image line; otherwise build a specific prompt
-          // from the deck topic + slide title + first content line for relevance.
+          // Prefer Gemini's concrete image line; otherwise use the slide title +
+          // first bullet. Deliberately NOT the deck title — it's often generic or
+          // misspelled and pollutes image search (e.g. returns unrelated photos).
           const firstLine = (slide.content || "").split("\n")[0]?.trim();
-          const fallback = [request.title, slide.title, firstLine]
-            .filter(Boolean)
-            .join(", ");
+          const fallback = [slide.title, firstLine].filter(Boolean).join(", ");
           const prompt = slide.imagePrompt?.trim() || fallback || slide.title;
           slide.imagePrompt = prompt;
           slide.imageStyle = style;

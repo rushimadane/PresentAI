@@ -8,7 +8,7 @@ const MODEL_NAME = process.env.GEMINI_MODEL || 'gemini-flash-latest';
 function buildPrompt({ title, content, slideBySlide, withImages, slideCount }) {
   const n = Math.max(3, Math.min(30, parseInt(slideCount, 10) || 10));
   const imageRule = withImages
-    ? `\n- After the content of each slide, add one line "Image: <a short, vivid visual description that best illustrates this slide>". Describe a concrete scene or subject (no text in the image).`
+    ? `\n- After the content of each slide, add one line "Image: <2-4 words naming a concrete, real-world, photographable subject that represents this slide>". Use a tangible object/place/scene that exists in stock photos (e.g. "circuit board closeup", "data center servers"), NOT abstract ideas, and never include text.`
     : '';
 
   if (slideBySlide) {

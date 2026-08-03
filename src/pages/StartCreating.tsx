@@ -35,7 +35,7 @@ const StartCreating = () => {
   const [slideBySlide, setSlideBySlide] = useState<boolean>(false);
   const [contentType, setContentType] = useState<string>('topic');
   const [withImages, setWithImages] = useState<boolean>(true);
-  const [imageStyle, setImageStyle] = useState<ImageStyle>('photo');
+  const [imageStyle, setImageStyle] = useState<ImageStyle>('web');
   const [slideCount, setSlideCount] = useState<number>(DEFAULT_SLIDE_COUNT);
   const [agreeToTerms, setAgreeToTerms] = useState<boolean>(false);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
@@ -346,7 +346,8 @@ Slide 2: Main Topic
                         </SelectContent>
                       </Select>
                       <p className="text-xs text-gray-500">
-                        "Real photo" uses actual stock photography (fast &amp; relevant). The other styles are AI-generated.
+                        "Web images" finds the real thing (best for people, places, events) via Google Images — uses your search quota (~1 per slide).
+                        "Real photo" is unlimited stock. Other styles are AI-generated.
                       </p>
                     </div>
                   )}

@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import {
   Presentation, SlideContent, resolveImageUrl, ImageStyle, IMAGE_STYLE_LABELS,
-  preloadSlideImages, fetchImageCandidates, ImageCandidate,
+  preloadSlideImages, fetchImageCandidates, aiImageOptions, ImageCandidate,
 } from '@/services/presentationService';
 import { exportToPptx, exportToPdf } from '@/utils/exportPresentation';
 import { DECK_THEMES, THEME_LIST, DEFAULT_THEME, ThemeId, DeckTheme, layoutForSlide } from '@/lib/deckThemes';
@@ -105,7 +105,7 @@ const PresentationView: React.FC<PresentationViewProps> = ({ title, presentation
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerLoading, setPickerLoading] = useState(false);
   const [candidates, setCandidates] = useState<ImageCandidate[]>([]);
-  const [pickerTab, setPickerTab] = useState<'all' | 'stock' | 'web'>('all');
+  const [pickerTab, setPickerTab] = useState<'stock' | 'web' | 'ai'>('stock');
 
   useEffect(() => {
     if (!presentation) return;
@@ -184,14 +184,31 @@ const PresentationView: React.FC<PresentationViewProps> = ({ title, presentation
     setDeck((prev) => ({ ...prev, slides: updated }));
   };
 
-  const openPicker = async () => {
-    setPickerOpen(true);
+  const pickerQuery = () => currentSlide.imagePrompt || `${deck.title} ${currentSlide.title}`;
+
+  // Load one tab's candidates. Web is fetched ONLY when its tab is opened, so a
+  // SerpAPI search isn't spent just by opening the picker.
+  const loadTab = async (tab: 'stock' | 'web' | 'ai') => {
+    if (tab === 'ai') {
+      setCandidates(aiImageOptions(pickerQuery(), 6));
+      return;
+    }
     setPickerLoading(true);
     setCandidates([]);
-    const query = currentSlide.imagePrompt || `${deck.title} ${currentSlide.title}`;
-    const list = await fetchImageCandidates(query, 'all');
+    const list = await fetchImageCandidates(pickerQuery(), tab);
     setCandidates(list);
     setPickerLoading(false);
+  };
+
+  const openPicker = async () => {
+    setPickerOpen(true);
+    setPickerTab('stock');
+    await loadTab('stock');
+  };
+
+  const selectTab = (tab: 'stock' | 'web' | 'ai') => {
+    setPickerTab(tab);
+    loadTab(tab);
   };
 
   const chooseCandidate = (c: ImageCandidate) => {
@@ -200,7 +217,7 @@ const PresentationView: React.FC<PresentationViewProps> = ({ title, presentation
     toast({ title: 'Image updated', description: 'Slide image replaced.' });
   };
 
-  const visibleCandidates = candidates.filter((c) => pickerTab === 'all' || c.source === pickerTab);
+  const visibleCandidates = candidates.filter((c) => c.source === pickerTab);
 
   // Hooks must run unconditionally (before any early return).
   const revealKey = `${currentSlideIndex}-${isEditing}`;
@@ -449,10 +466,10 @@ const PresentationView: React.FC<PresentationViewProps> = ({ title, presentation
           </SheetHeader>
 
           <div className="flex gap-1 mt-4">
-            {(['all', 'stock', 'web'] as const).map((tab) => (
-              <button key={tab} onClick={() => setPickerTab(tab)}
-                className={`px-3 py-1.5 text-xs rounded-md capitalize ${pickerTab === tab ? 'bg-primary text-white' : 'bg-muted text-gray-600'}`}>
-                {tab}
+            {(['stock', 'web', 'ai'] as const).map((tab) => (
+              <button key={tab} onClick={() => selectTab(tab)}
+                className={`px-3 py-1.5 text-xs rounded-md uppercase ${pickerTab === tab ? 'bg-primary text-white' : 'bg-muted text-gray-600'}`}>
+                {tab === 'web' ? 'Web (Google)' : tab}
               </button>
             ))}
           </div>
