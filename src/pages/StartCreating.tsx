@@ -13,7 +13,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { generatePresentation, PresentationRequest, savePresentation, ImageStyle, IMAGE_STYLE_LABELS } from '@/services/presentationService';
+import { generatePresentation, PresentationRequest, savePresentation, ImageStyle, IMAGE_STYLE_LABELS, SLIDE_COUNT_OPTIONS, DEFAULT_SLIDE_COUNT } from '@/services/presentationService';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Image as ImageIcon } from 'lucide-react';
 import { usePresentations } from '@/contexts/PresentationContext';
@@ -36,6 +36,7 @@ const StartCreating = () => {
   const [contentType, setContentType] = useState<string>('topic');
   const [withImages, setWithImages] = useState<boolean>(true);
   const [imageStyle, setImageStyle] = useState<ImageStyle>('photo');
+  const [slideCount, setSlideCount] = useState<number>(DEFAULT_SLIDE_COUNT);
   const [agreeToTerms, setAgreeToTerms] = useState<boolean>(false);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [apiKey, setApiKey] = useState<string>('');
@@ -111,6 +112,7 @@ const StartCreating = () => {
         slideBySlide: contentType === 'outline',
         withImages,
         imageStyle,
+        slideCount,
       };
 
       // Call the backend to generate the presentation
@@ -303,7 +305,21 @@ Slide 2: Main Topic
                     </div>
                   </TabsContent>
                 </Tabs>
-                
+
+                <div className="flex items-center gap-3">
+                  <label className="text-sm font-medium whitespace-nowrap">Number of slides</label>
+                  <Select value={String(slideCount)} onValueChange={(v) => setSlideCount(Number(v))}>
+                    <SelectTrigger className="w-32">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SLIDE_COUNT_OPTIONS.map((n) => (
+                        <SelectItem key={n} value={String(n)}>{n} slides</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 <div className="rounded-lg border border-gray-200 p-4 space-y-4">
                   <div className="flex items-center space-x-2">
                     <Checkbox

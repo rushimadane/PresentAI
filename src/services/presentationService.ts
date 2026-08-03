@@ -19,7 +19,11 @@ export interface PresentationRequest {
   slideBySlide?: boolean;
   withImages?: boolean;
   imageStyle?: ImageStyle;
+  slideCount?: number;
 }
+
+export const SLIDE_COUNT_OPTIONS = [6, 8, 10, 12, 15];
+export const DEFAULT_SLIDE_COUNT = 10;
 
 export interface SlideContent {
   title: string;
@@ -41,6 +45,7 @@ export interface Presentation {
   title: string;
   createdAt: string;
   slides: SlideContent[];
+  theme?: string;
 }
 
 
@@ -128,6 +133,83 @@ export const resolveImageUrl = async (
   // Non-photo styles, or Pexels unavailable → AI generation.
   const base = buildImageUrl(prompt, style);
   return variant ? `${base}&v=${variant}` : base;
+};
+
+export interface ImageCandidate {
+  url: string;
+  thumb?: string;
+  source: "stock" | "web" | "ai";
+  credit?: string;
+}
+
+// Candidate cache — so re-opening the same query's picker doesn't spend another
+// SerpAPI search (the free tier is limited). Cached per query+source for 7 days.
+const CAND_PREFIX = "imgcand_";
+const CAND_TTL_MS = 1000 * 60 * 60 * 24 * 7;
+const candMemory = new Map<string, ImageCandidate[]>();
+
+const readCandidates = (key: string): ImageCandidate[] | null => {
+  if (candMemory.has(key)) return candMemory.get(key)!;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { images: ImageCandidate[]; cachedAt: number };
+    if (Date.now() - parsed.cachedAt > CAND_TTL_MS) {
+      localStorage.removeItem(key);
+      return null;
+    }
+    candMemory.set(key, parsed.images);
+    return parsed.images;
+  } catch {
+    return null;
+  }
+};
+
+const writeCandidates = (key: string, images: ImageCandidate[]): void => {
+  candMemory.set(key, images);
+  try {
+    localStorage.setItem(key, JSON.stringify({ images, cachedAt: Date.now() }));
+  } catch {
+    /* localStorage full — in-memory cache still applies */
+  }
+};
+
+// Fetch a list of image candidates for the swap picker: stock (Pexels) + web
+// (real Google Images via SerpAPI). Results are cached per query+source so the
+// same slide's Web tab doesn't burn another SerpAPI search. Always appends a
+// couple of AI-generated options so the picker is never empty.
+export const fetchImageCandidates = async (
+  query: string,
+  source: "all" | "stock" | "web" = "all"
+): Promise<ImageCandidate[]> => {
+  const q = toSearchQuery(query || "");
+  const aiOptions: ImageCandidate[] = [0, 1].map((v) => ({
+    url: `${buildImageUrl(query, "illustration")}${v ? `&v=${v}` : ""}`,
+    source: "ai",
+    credit: "AI generated",
+  }));
+
+  const cacheKey = `${CAND_PREFIX}${source}_${hashKey(q)}`;
+  const cached = readCandidates(cacheKey);
+  if (cached) return [...cached, ...aiOptions];
+
+  let results: ImageCandidate[] = [];
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/api/images?query=${encodeURIComponent(q)}&source=${source}`
+    );
+    if (res.ok) {
+      const data = (await res.json()) as { images?: ImageCandidate[] };
+      results = data.images || [];
+    }
+  } catch {
+    // ignore — AI options below still returned
+  }
+
+  // Only cache real (network) results, so a transient failure isn't remembered.
+  if (results.length) writeCandidates(cacheKey, results);
+
+  return [...results, ...aiOptions];
 };
 
 const imageLineRegex = /^\s*image\s*[:\-]\s*(.+)$/i;
@@ -238,6 +320,7 @@ const cacheKeyFor = (request: PresentationRequest): string =>
       slideBySlide: request.slideBySlide ?? false,
       withImages: request.withImages ?? false,
       imageStyle: request.imageStyle ?? "illustration",
+      slideCount: request.slideCount ?? DEFAULT_SLIDE_COUNT,
     })
   );
 
@@ -297,6 +380,7 @@ export const generatePresentation = async (request: PresentationRequest): Promis
         apiKey: request.apiKey,
         slideBySlide: request.slideBySlide ?? false,
         withImages: request.withImages ?? false,
+        slideCount: request.slideCount ?? DEFAULT_SLIDE_COUNT,
       }),
     });
 
@@ -356,6 +440,7 @@ export const generatePresentation = async (request: PresentationRequest): Promis
       title: resolvedTitle,
       createdAt: new Date().toISOString(),
       slides,
+      theme: "light",
     };
   } catch (error: any) {
     console.error("Frontend Error:", error);

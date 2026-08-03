@@ -5,7 +5,8 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const MODEL_NAME = process.env.GEMINI_MODEL || 'gemini-flash-latest';
 
-function buildPrompt({ title, content, slideBySlide, withImages }) {
+function buildPrompt({ title, content, slideBySlide, withImages, slideCount }) {
+  const n = Math.max(3, Math.min(30, parseInt(slideCount, 10) || 10));
   const imageRule = withImages
     ? `\n- After the content of each slide, add one line "Image: <a short, vivid visual description that best illustrates this slide>". Describe a concrete scene or subject (no text in the image).`
     : '';
@@ -14,6 +15,7 @@ function buildPrompt({ title, content, slideBySlide, withImages }) {
     return `You are a presentation generator. Turn the outline below into a polished slide deck about "${title}".
 Rules:
 - Output plain text only (no markdown symbols like # or *).
+- Produce about ${n} slides.
 - Start every slide with a line "Slide N: <slide title>".
 - Follow each title line with concise bullet-style lines of content.${imageRule}
 - Separate slides with a blank line.
@@ -24,7 +26,7 @@ ${content}`;
   return `You are a presentation generator. Create a professional presentation about "${title}".
 Rules:
 - Output plain text only (no markdown symbols like # or *).
-- Structure it as an introduction slide, 3-5 key-point slides, and a conclusion slide.
+- Produce exactly ${n} slides: an intro/title slide, ${n - 2} content slides, and a conclusion slide.
 - Start every slide with a line "Slide N: <slide title>".
 - Follow each title line with concise bullet-style lines of content.${imageRule}
 - Separate slides with a blank line.
@@ -39,7 +41,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  const { title, content, slideBySlide, withImages, apiKey } = req.body || {};
+  const { title, content, slideBySlide, withImages, slideCount, apiKey } = req.body || {};
   const key = (apiKey && apiKey.trim()) || process.env.GEMINI_API_KEY;
 
   if (!key) {
@@ -57,7 +59,7 @@ export default async function handler(req, res) {
   try {
     const genAI = new GoogleGenerativeAI(key);
     const model = genAI.getGenerativeModel({ model: MODEL_NAME });
-    const prompt = buildPrompt({ title: title || 'Untitled', content, slideBySlide, withImages });
+    const prompt = buildPrompt({ title: title || 'Untitled', content, slideBySlide, withImages, slideCount });
     const result = await model.generateContent(prompt);
     const text = result.response.text();
     res.status(200).json({ result: text, source: 'gemini-api', title: title || 'Untitled' });
