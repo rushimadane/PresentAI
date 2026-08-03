@@ -31,7 +31,10 @@ interface PresentationViewProps {
 
 // ---- Slide image with skeleton + retry + error fallback -------------------
 const MAX_RETRIES = 2;
-const SlideImage: React.FC<{ src: string; alt: string; className?: string }> = ({ src, alt, className }) => {
+// fit="contain" shows the WHOLE image (any shape) with a blurred fill behind it
+// so there are no empty bars — like Gamma. fit="cover" fills edge-to-edge (used
+// for full-bleed / cover layouts).
+const SlideImage: React.FC<{ src: string; alt: string; fit?: 'cover' | 'contain' }> = ({ src, alt, fit = 'contain' }) => {
   const [loaded, setLoaded] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [failed, setFailed] = useState(false);
@@ -55,11 +58,19 @@ const SlideImage: React.FC<{ src: string; alt: string; className?: string }> = (
   return (
     <>
       {!loaded && <Skeleton className="absolute inset-0 h-full w-full rounded-none" />}
+      {/* Blurred fill so any aspect ratio looks intentional (contain mode only). */}
+      {fit === 'contain' && (
+        <div
+          aria-hidden
+          className={`absolute inset-0 bg-center bg-cover scale-110 blur-2xl transition-opacity duration-300 ${loaded ? 'opacity-45' : 'opacity-0'}`}
+          style={{ backgroundImage: `url("${effectiveSrc}")` }}
+        />
+      )}
       <img
         key={effectiveSrc}
         src={effectiveSrc}
         alt={alt}
-        className={`w-full h-full object-cover transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'} ${className || ''}`}
+        className={`relative w-full h-full ${fit === 'cover' ? 'object-cover' : 'object-contain'} transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
         onLoad={() => setLoaded(true)}
         onError={handleError}
       />
@@ -236,14 +247,13 @@ const PresentationView: React.FC<PresentationViewProps> = ({ title, presentation
 
   // ---- Reusable pieces (plain functions, NOT components, so the ~60fps
   // typewriter re-render doesn't remount the image each tick) ----------------
-  const imageArea = () => (
+  const imageArea = (fit: 'cover' | 'contain' = 'contain') => (
     <div className="relative h-full w-full overflow-hidden group" style={{ background: theme.panelBg }}>
-      {currentSlide.imageUrl && <SlideImage src={currentSlide.imageUrl} alt={currentSlide.imagePrompt || currentSlide.title} />}
+      {currentSlide.imageUrl && <SlideImage src={currentSlide.imageUrl} alt={currentSlide.imagePrompt || currentSlide.title} fit={fit} />}
       <div className="absolute top-2 left-2 flex items-center gap-1 rounded bg-black/50 px-2 py-1 text-[10px] text-white">
         <Image className="h-3 w-3" />
         {currentSlide.imageUrl?.includes('pexels.com') ? 'Photo'
-          : currentSlide.imageUrl?.includes('googleusercontent') || currentSlide.imageUrl?.includes('gstatic') ? 'Web'
-          : currentSlide.imageUrl?.includes('pollinations') ? 'AI image' : 'Image'}
+          : currentSlide.imageUrl?.includes('pollinations') ? 'AI image' : 'Web'}
       </div>
       <div className="absolute bottom-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
         <button type="button" onClick={openPicker}
@@ -312,7 +322,7 @@ const PresentationView: React.FC<PresentationViewProps> = ({ title, presentation
         <div className={`${base} relative flex items-center justify-center p-10`} style={{ background: theme.bg, ...borderColor }}>
           {currentSlide.imageUrl && (
             <div className="absolute inset-0">
-              <SlideImage src={currentSlide.imageUrl} alt={currentSlide.title} />
+              <SlideImage src={currentSlide.imageUrl} alt={currentSlide.title} fit="cover" />
               <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.45)' }} />
             </div>
           )}
@@ -334,7 +344,7 @@ const PresentationView: React.FC<PresentationViewProps> = ({ title, presentation
     if (layout === 'full-image') {
       return (
         <div className={`${base} relative`} style={{ background: theme.bg, ...borderColor }}>
-          {imageArea()}
+          {imageArea('cover')}
           <div className="absolute inset-x-0 bottom-0 p-8" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.75), transparent)' }}>
             {textArea({ overlay: true })}
           </div>
