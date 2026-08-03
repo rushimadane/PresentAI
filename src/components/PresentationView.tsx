@@ -163,13 +163,16 @@ const PresentationView: React.FC<PresentationViewProps> = ({ title, presentation
   };
 
   // --- Images: regenerate + swap picker -------------------------------------
+  // Web queries the slide topic (the real subject); stock/AI use the visual prompt.
+  const queryForStyle = (s: SlideContent, style: ImageStyle) =>
+    (style === 'web' ? s.title : (s.imagePrompt || s.title || deck.title || 'presentation')).trim();
+
   const regenerateImage = async () => {
     const s = currentSlide;
     const style = (s.imageStyle as ImageStyle) || 'photo';
     toast({ title: 'Fetching a new image', description: 'One moment…' });
-    const prompt = (s.imagePrompt || s.title || deck.title || 'presentation').trim();
-    const url = await resolveImageUrl(prompt, style, Date.now());
-    setSlide(currentSlideIndex, (x) => ({ ...x, imagePrompt: prompt, imageStyle: style, imageUrl: url }));
+    const url = await resolveImageUrl(queryForStyle(s, style), style, Date.now());
+    setSlide(currentSlideIndex, (x) => ({ ...x, imageStyle: style, imageUrl: url }));
   };
 
   const regenerateAllImages = async () => {
@@ -177,25 +180,27 @@ const PresentationView: React.FC<PresentationViewProps> = ({ title, presentation
     const updated = await Promise.all(
       slides.map(async (s) => {
         const style = (s.imageStyle as ImageStyle) || 'photo';
-        const prompt = (s.imagePrompt || s.title || deck.title || 'presentation').trim();
-        return { ...s, imageStyle: style, imageUrl: await resolveImageUrl(prompt, style, Date.now()) };
+        return { ...s, imageStyle: style, imageUrl: await resolveImageUrl(queryForStyle(s, style), style, Date.now()) };
       })
     );
     setDeck((prev) => ({ ...prev, slides: updated }));
   };
 
-  const pickerQuery = () => currentSlide.imagePrompt || `${deck.title} ${currentSlide.title}`;
+  // Web searches the slide's real topic (the actual subject, e.g. a person);
+  // stock/AI use the concrete visual prompt.
+  const pickerQuery = (tab: 'stock' | 'web' | 'ai') =>
+    tab === 'web' ? currentSlide.title : (currentSlide.imagePrompt || currentSlide.title);
 
   // Load one tab's candidates. Web is fetched ONLY when its tab is opened, so a
   // SerpAPI search isn't spent just by opening the picker.
   const loadTab = async (tab: 'stock' | 'web' | 'ai') => {
     if (tab === 'ai') {
-      setCandidates(aiImageOptions(pickerQuery(), 6));
+      setCandidates(aiImageOptions(pickerQuery('ai'), 6));
       return;
     }
     setPickerLoading(true);
     setCandidates([]);
-    const list = await fetchImageCandidates(pickerQuery(), tab);
+    const list = await fetchImageCandidates(pickerQuery(tab), tab);
     setCandidates(list);
     setPickerLoading(false);
   };

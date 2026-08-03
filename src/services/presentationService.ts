@@ -326,7 +326,7 @@ export const parseSlides = (rawText: string): SlideContent[] => {
 // ---------------------------------------------------------------------------
 // Bump the version suffix whenever the image pipeline changes, to invalidate
 // cached decks that stored old image URLs (e.g. the switch to Pexels photos).
-const CACHE_PREFIX = "pres_cache_v3_";
+const CACHE_PREFIX = "pres_cache_v4_";
 const CACHE_TTL_MS = 1000 * 60 * 60 * 24; // 24 hours
 
 interface CachedGeneration {
@@ -448,15 +448,16 @@ export const generatePresentation = async (request: PresentationRequest): Promis
       const style = request.imageStyle ?? "photo";
       await Promise.all(
         slides.map(async (slide) => {
-          // Prefer Gemini's concrete image line; otherwise use the slide title +
-          // first bullet. Deliberately NOT the deck title — it's often generic or
-          // misspelled and pollutes image search (e.g. returns unrelated photos).
+          // Gemini's concrete image line drives STOCK/AI (a generic visual like
+          // "blackboard with equations"). But WEB search must use the slide's
+          // actual topic (e.g. "Werner Heisenberg") to find the real subject —
+          // the generic visual would return unrelated photos.
           const firstLine = (slide.content || "").split("\n")[0]?.trim();
-          const fallback = [slide.title, firstLine].filter(Boolean).join(", ");
-          const prompt = slide.imagePrompt?.trim() || fallback || slide.title;
-          slide.imagePrompt = prompt;
+          const visual = slide.imagePrompt?.trim() || [slide.title, firstLine].filter(Boolean).join(", ") || slide.title;
+          slide.imagePrompt = visual;
           slide.imageStyle = style;
-          slide.imageUrl = await resolveImageUrl(prompt, style);
+          const query = style === "web" ? slide.title : visual;
+          slide.imageUrl = await resolveImageUrl(query, style);
         })
       );
     }
